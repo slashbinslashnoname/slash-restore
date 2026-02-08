@@ -60,6 +60,8 @@ export class PrivilegeManager {
 
   /**
    * Request privilege elevation via the platform's authentication mechanism.
+   * On Linux, also grants read ACL to all block devices so that no further
+   * pkexec prompts are needed during scanning.
    *
    * @returns true if the user successfully authenticated.
    */
@@ -68,10 +70,36 @@ export class PrivilegeManager {
 
     try {
       switch (process.platform) {
-        case 'linux':
-          await execFileAsync('pkexec', ['true'])
+        case 'linux': {
+          // Discover all block devices and their partitions upfront,
+          // then grant read ACL to all of them in a single pkexec call.
+          const uid = process.getuid?.()
+          const allDevicePaths = this.discoverAllBlockDevices()
+          const toGrant: string[] = []
+
+          for (const p of allDevicePaths) {
+            if (this.grantedDevices.has(p)) continue
+            try {
+              await fsAccess(p, fs.constants.R_OK)
+              this.grantedDevices.add(p)
+            } catch {
+              toGrant.push(p)
+            }
+          }
+
+          if (toGrant.length > 0) {
+            await execFileAsync('pkexec', [
+              'bash', '-c',
+              toGrant.map(p => `setfacl -m u:${uid}:r '${p}'`).join(' && ')
+            ])
+            for (const p of toGrant) this.grantedDevices.add(p)
+          } else {
+            // No devices need granting; just verify auth works
+            await execFileAsync('pkexec', ['true'])
+          }
           this.elevated = true
           return true
+        }
 
         case 'darwin':
           await execFileAsync('osascript', [
@@ -100,6 +128,26 @@ export class PrivilegeManager {
   }
 
   /**
+   * Discover all block devices and their partitions from /sys/block.
+   */
+  private discoverAllBlockDevices(): string[] {
+    const devices: string[] = []
+    try {
+      const blocks = fs.readdirSync('/sys/block/', { withFileTypes: true })
+      for (const entry of blocks) {
+        // Skip virtual devices (loop, ram, dm-, etc.)
+        if (/^(loop|ram|dm-)/.test(entry.name)) continue
+        const devPath = `/dev/${entry.name}`
+        devices.push(devPath)
+        devices.push(...this.discoverPartitionPaths(devPath))
+      }
+    } catch {
+      // /sys/block not available
+    }
+    return devices
+  }
+
+  /**
    * Discover partition paths for a block device.
    * E.g., /dev/nvme0n1 -> [/dev/nvme0n1p1, /dev/nvme0n1p2]
    */
@@ -120,14 +168,14 @@ export class PrivilegeManager {
   }
 
   /**
-   * Grant the current user read access to a block device and all its partitions.
-   * Uses pkexec + setfacl on Linux, osascript + chmod on macOS.
+   * Verify read access to a block device and its partitions.
+   * ACLs are granted during requestElevation(), so this only checks
+   * whether access exists (no pkexec prompt).
    *
-   * @param devicePath - The block device path (e.g., /dev/nvme0n1)
-   * @returns true if access was granted.
+   * If access is missing (e.g. device plugged in after elevation),
+   * falls back to a single pkexec call.
    */
   async grantDeviceAccess(devicePath: string): Promise<boolean> {
-    // Collect all paths to grant: the device itself + all partitions
     const paths = [devicePath, ...this.discoverPartitionPaths(devicePath)]
     const toGrant: string[] = []
 
@@ -143,11 +191,11 @@ export class PrivilegeManager {
 
     if (toGrant.length === 0) return true
 
+    // Fallback: device was plugged in after initial elevation
     try {
       const uid = process.getuid?.()
       switch (process.platform) {
         case 'linux':
-          // Grant read ACL to all paths in a single pkexec call
           await execFileAsync('pkexec', [
             'bash', '-c',
             toGrant.map(p => `setfacl -m u:${uid}:r '${p}'`).join(' && ')
