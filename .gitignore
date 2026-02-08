@@ -1,0 +1,117 @@
+# Dependencies
+node_modules/
+bun.lockb  # Wait, no, commit bun.lock? bun.lock is like package-lock, usually commit.
+
+No, bun recommends committing bun.lock.
+
+package-lock.json is there, maybe npm and bun.
+
+But ignore node_modules/.
+
+# Production builds
+dist/
+out/
+build/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+npm-error.log*
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Dependency directories
+jspm_packages/
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# Optional REPL history
+.node_repl_history
+
+# Output of 'npm pack'
+*.tgz
+
+# Yarn Integrity file
+.yarn-integrity
+
+# Bun
+.bun/
+
+# parcel-bundler cache (https://parceljs.org/)
+.cache
+.parcel-cache
+
+# Next.js
+.next/
+
+# Nuxt.js
+/.nuxt
+/dist
+/nuxt.config.js # production build artifacts
+
+# Vuepress
+.vuepress/dist
+
+# Gatsby
+.cache/
+public/
+
+# Electron
+electron-builder-cache/
+
+# Coverage directory used by tools like istanbul
+coverage/
+.nyc_output
+/coverage/
+
+# ngrx
+/ngrx/
+
+# PyInstaller
+#  Usually these files are written by a python script from a template
+#  before PyInstaller builds the exe, so as to inject date/other infos into it.
+*.manifest
+*.spec
+
+# Installer log
+setup.exe*
+
+# Temporary folders
+tmp/
+temp/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Local
+.claude/
+.slashbot/
