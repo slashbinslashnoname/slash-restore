@@ -50,6 +50,7 @@ interface MetadataWorkerData {
   sessionId: string
   devicePath: string
   fileCategories: FileCategory[]
+  fileTypes?: FileType[]
   deviceSize: string
   filesystemType?: FilesystemType
   scanPartitions?: boolean
@@ -155,7 +156,31 @@ const EXTENSION_TO_TYPE: Record<string, { type: FileType; category: FileCategory
   avi: { type: 'avi', category: 'video' },
   pdf: { type: 'pdf', category: 'document' },
   docx: { type: 'docx', category: 'document' },
-  xlsx: { type: 'xlsx', category: 'document' }
+  xlsx: { type: 'xlsx', category: 'document' },
+  rtf: { type: 'rtf', category: 'document' },
+  pptx: { type: 'pptx', category: 'document' },
+  gif: { type: 'gif', category: 'photo' },
+  webp: { type: 'webp', category: 'photo' },
+  psd: { type: 'psd', category: 'photo' },
+  mkv: { type: 'mkv', category: 'video' },
+  webm: { type: 'mkv', category: 'video' },
+  flv: { type: 'flv', category: 'video' },
+  wmv: { type: 'wmv', category: 'video' },
+  mp3: { type: 'mp3', category: 'audio' },
+  wav: { type: 'wav', category: 'audio' },
+  flac: { type: 'flac', category: 'audio' },
+  ogg: { type: 'ogg', category: 'audio' },
+  m4a: { type: 'm4a', category: 'audio' },
+  zip: { type: 'zip', category: 'archive' },
+  rar: { type: 'rar', category: 'archive' },
+  '7z': { type: '7z', category: 'archive' },
+  gz: { type: 'gz', category: 'archive' },
+  bz2: { type: 'bz2', category: 'archive' },
+  xz: { type: 'xz', category: 'archive' },
+  tar: { type: 'tar', category: 'archive' },
+  sqlite: { type: 'sqlite', category: 'database' },
+  db: { type: 'sqlite', category: 'database' },
+  dat: { type: 'bdb', category: 'database' }
 }
 
 // ─── FAT32 metadata parser ──────────────────────────────────────
@@ -168,7 +193,8 @@ const EXTENSION_TO_TYPE: Record<string, { type: FileType; category: FileCategory
  */
 async function parseFat32(
   fd: number,
-  categories: Set<FileCategory>
+  categories: Set<FileCategory>,
+  fileTypes?: Set<FileType>
 ): Promise<RecoverableFile[]> {
   const files: RecoverableFile[] = []
 
@@ -238,7 +264,11 @@ async function parseFat32(
 
       const mapping = EXTENSION_TO_TYPE[ext]
       if (!mapping) continue
-      if (!categories.has(mapping.category)) continue
+      if (fileTypes) {
+        if (!fileTypes.has(mapping.type)) continue
+      } else {
+        if (!categories.has(mapping.category)) continue
+      }
 
       // File size.
       const fileSize = dirBuffer.readUInt32LE(i + 28)
@@ -309,7 +339,8 @@ async function parseFat32(
  */
 async function parseNtfs(
   fd: number,
-  categories: Set<FileCategory>
+  categories: Set<FileCategory>,
+  fileTypes?: Set<FileType>
 ): Promise<RecoverableFile[]> {
   const files: RecoverableFile[] = []
 
@@ -434,7 +465,11 @@ async function parseNtfs(
     const ext = extMatch[1].toLowerCase()
     const mapping = EXTENSION_TO_TYPE[ext]
     if (!mapping) continue
-    if (!categories.has(mapping.category)) continue
+    if (fileTypes) {
+      if (!fileTypes.has(mapping.type)) continue
+    } else {
+      if (!categories.has(mapping.category)) continue
+    }
 
     files.push({
       id: uuidv4(),
@@ -522,7 +557,7 @@ async function discoverPartitions(devicePath: string): Promise<string[]> {
 /** Filesystems that have a quick scan parser implemented. */
 const SUPPORTED_QUICK_SCAN: Set<FilesystemType> = new Set(['fat32', 'ntfs'])
 
-async function scanDevice(devicePath: string, categories: Set<FileCategory>): Promise<{ files: RecoverableFile[]; fsType: FilesystemType }> {
+async function scanDevice(devicePath: string, categories: Set<FileCategory>, fileTypes?: Set<FileType>): Promise<{ files: RecoverableFile[]; fsType: FilesystemType }> {
   let fd: number
   try {
     fd = await fsOpen(devicePath, 'r')
@@ -554,11 +589,11 @@ async function scanDevice(devicePath: string, categories: Set<FileCategory>): Pr
   try {
     switch (fsType) {
       case 'fat32':
-        files = await parseFat32(fd, categories)
+        files = await parseFat32(fd, categories, fileTypes)
         break
 
       case 'ntfs':
-        files = await parseNtfs(fd, categories)
+        files = await parseNtfs(fd, categories, fileTypes)
         break
 
       default:
@@ -580,6 +615,9 @@ async function scanDevice(devicePath: string, categories: Set<FileCategory>): Pr
 
 async function runMetadataScan(): Promise<void> {
   const categories = new Set(config.fileCategories)
+  const fileTypes = config.fileTypes && config.fileTypes.length > 0
+    ? new Set(config.fileTypes)
+    : undefined
   let allFiles: RecoverableFile[] = []
   const detectedFilesystems: FilesystemType[] = []
 
@@ -589,18 +627,18 @@ async function runMetadataScan(): Promise<void> {
 
     for (const partPath of partitions) {
       if (cancelled) break
-      const { files, fsType } = await scanDevice(partPath, categories)
+      const { files, fsType } = await scanDevice(partPath, categories, fileTypes)
       allFiles.push(...files)
       detectedFilesystems.push(fsType)
     }
 
     if (partitions.length === 0) {
-      const { files, fsType } = await scanDevice(config.devicePath, categories)
+      const { files, fsType } = await scanDevice(config.devicePath, categories, fileTypes)
       allFiles.push(...files)
       detectedFilesystems.push(fsType)
     }
   } else {
-    const { files, fsType } = await scanDevice(config.devicePath, categories)
+    const { files, fsType } = await scanDevice(config.devicePath, categories, fileTypes)
     allFiles.push(...files)
     detectedFilesystems.push(fsType)
   }

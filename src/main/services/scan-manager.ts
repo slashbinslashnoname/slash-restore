@@ -25,9 +25,9 @@ import type { PrivilegeManager } from './privilege'
 
 /** Messages sent from worker threads to the main thread. */
 export interface WorkerMessage {
-  type: 'progress' | 'file-found' | 'complete' | 'error'
+  type: 'progress' | 'file-found' | 'files-batch' | 'complete' | 'error'
   sessionId: string
-  data?: ScanProgress | RecoverableFile | { error: string }
+  data?: ScanProgress | RecoverableFile | RecoverableFile[] | { error: string }
 }
 
 /** Messages sent from the main thread to worker threads. */
@@ -48,11 +48,24 @@ export interface ScanManagerEvents {
   error: (sessionId: string, error: string) => void
 }
 
+/**
+ * Maximum number of RecoverableFile objects kept in-memory per session.
+ * Results are streamed to the renderer via IPC as they arrive, so the
+ * main-thread array is only used for post-scan access. Once the cap is
+ * reached, new files are still deduplicated, counted, and emitted to
+ * the renderer, but not stored in the array.
+ */
+const MAX_FILES_IN_MEMORY = 50_000
+
 export class ScanManager extends EventEmitter {
   private sessions = new Map<string, ScanSession>()
   private workers = new Map<string, Worker[]>()
   /** Track how many workers per session have sent 'complete'. */
   private completedWorkers = new Map<string, number>()
+  /** O(1) deduplication: "offset:type" keys per session. */
+  private seenFiles = new Map<string, Set<string>>()
+  /** Accurate file count even when foundFiles is capped. */
+  private fileCounts = new Map<string, number>()
   private privilegeManager: PrivilegeManager | null = null
 
   setPrivilegeManager(pm: PrivilegeManager): void {
@@ -90,6 +103,8 @@ export class ScanManager extends EventEmitter {
     }
 
     this.sessions.set(sessionId, session)
+    this.seenFiles.set(sessionId, new Set())
+    this.fileCounts.set(sessionId, 0)
 
     const sessionWorkers: Worker[] = []
 
@@ -167,7 +182,8 @@ export class ScanManager extends EventEmitter {
     this.sendControlMessage(sessionId, { type: 'cancel' })
     this.terminateWorkers(sessionId)
 
-    this.emit('complete', sessionId, session.foundFiles.length)
+    const fileCount = this.fileCounts.get(sessionId) ?? session.foundFiles.length
+    this.emit('complete', sessionId, fileCount)
   }
 
   /**
@@ -195,6 +211,8 @@ export class ScanManager extends EventEmitter {
     }
     this.sessions.clear()
     this.workers.clear()
+    this.seenFiles.clear()
+    this.fileCounts.clear()
     this.removeAllListeners()
   }
 
@@ -208,6 +226,7 @@ export class ScanManager extends EventEmitter {
         sessionId,
         devicePath: config.partitionPath ?? config.devicePath,
         fileCategories: config.fileCategories,
+        fileTypes: config.fileTypes,
         deviceSize: (config.deviceSize ?? config.endOffset ?? 0n).toString(),
         startOffset: config.startOffset?.toString() ?? '0',
         endOffset: config.endOffset?.toString() ?? '0',
@@ -227,6 +246,7 @@ export class ScanManager extends EventEmitter {
         sessionId,
         devicePath: config.partitionPath ?? config.devicePath,
         fileCategories: config.fileCategories,
+        fileTypes: config.fileTypes,
         deviceSize: (config.deviceSize ?? 0n).toString(),
         filesystemType: undefined,
         // For quick scan on whole device, try each partition
@@ -244,11 +264,6 @@ export class ScanManager extends EventEmitter {
     workerType: 'carving' | 'metadata'
   ): void {
     worker.on('message', (msg: WorkerMessage) => {
-      if (msg.type === 'progress') {
-        console.log(`[scan] ${workerType} progress:`, msg.data && typeof msg.data === 'object' && 'percentage' in msg.data ? (msg.data as { percentage: number }).percentage + '%' : '?')
-      } else {
-        console.log(`[scan] ${workerType} message:`, msg.type)
-      }
       this.handleWorkerMessage(sessionId, msg)
     })
 
@@ -263,7 +278,9 @@ export class ScanManager extends EventEmitter {
     })
 
     worker.on('exit', (code) => {
-      console.log(`[scan] ${workerType} worker exited with code`, code)
+      if (code !== 0 && code !== null) {
+        console.error(`[scan] ${workerType} worker exited with code`, code)
+      }
       this.handleWorkerExit(sessionId, workerType, code)
     })
   }
@@ -295,32 +312,55 @@ export class ScanManager extends EventEmitter {
 
       case 'file-found': {
         const file = msg.data as RecoverableFile
-        // Deduplicate by offset: carving and metadata workers may find the
-        // same file independently.
-        const isDuplicate = session.foundFiles.some(
-          (f) => f.offset === file.offset && f.type === file.type
-        )
-        if (!isDuplicate) {
-          session.foundFiles.push(file)
-          session.progress.filesFound = session.foundFiles.length
+        const seen = this.seenFiles.get(sessionId)!
+        const key = `${file.offset}:${file.type}`
+        if (!seen.has(key)) {
+          seen.add(key)
+          const count = (this.fileCounts.get(sessionId) ?? 0) + 1
+          this.fileCounts.set(sessionId, count)
+          if (session.foundFiles.length < MAX_FILES_IN_MEMORY) {
+            session.foundFiles.push(file)
+          }
+          session.progress.filesFound = count
           this.emit('file-found', sessionId, file)
         }
+        break
+      }
+
+      case 'files-batch': {
+        const files = msg.data as RecoverableFile[]
+        const seen = this.seenFiles.get(sessionId)!
+        let count = this.fileCounts.get(sessionId) ?? 0
+        for (const file of files) {
+          const key = `${file.offset}:${file.type}`
+          if (!seen.has(key)) {
+            seen.add(key)
+            count++
+            if (session.foundFiles.length < MAX_FILES_IN_MEMORY) {
+              session.foundFiles.push(file)
+            }
+            this.emit('file-found', sessionId, file)
+          }
+        }
+        this.fileCounts.set(sessionId, count)
+        session.progress.filesFound = count
         break
       }
 
       case 'complete': {
         // Track worker completion. When all workers for a session finish,
         // mark the session as completed.
-        const count = (this.completedWorkers.get(sessionId) ?? 0) + 1
-        this.completedWorkers.set(sessionId, count)
+        const wCount = (this.completedWorkers.get(sessionId) ?? 0) + 1
+        this.completedWorkers.set(sessionId, wCount)
 
         const totalWorkers = this.workers.get(sessionId)?.length ?? 1
-        if (count >= totalWorkers && session.status === 'scanning') {
+        if (wCount >= totalWorkers && session.status === 'scanning') {
           session.status = 'completed'
           session.completedAt = Date.now()
           session.progress.percentage = 100
-          console.log(`[scan] All workers complete. Found ${session.foundFiles.length} files.`)
-          this.emit('complete', sessionId, session.foundFiles.length)
+          const fileCount = this.fileCounts.get(sessionId) ?? session.foundFiles.length
+          console.log(`[scan] All workers complete. Found ${fileCount} files.`)
+          this.emit('complete', sessionId, fileCount)
           this.terminateWorkers(sessionId)
         }
         break

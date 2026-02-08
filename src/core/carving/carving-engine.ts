@@ -37,7 +37,8 @@ import {
   CHUNK_SIZE,
   CHUNK_OVERLAP,
   SIGNATURE_MAP,
-  getSignaturesByCategory
+  getSignaturesByCategory,
+  getSignaturesByTypes
 } from '../../shared/constants/file-signatures'
 
 // ─── Types ─────────────────────────────────────────────────────
@@ -49,6 +50,8 @@ export interface CarvingScanConfig {
   endOffset: bigint
   /** File categories to search for. */
   categories: FileCategory[]
+  /** When provided, only these specific file types are scanned (overrides categories). */
+  fileTypes?: FileType[]
 }
 
 export interface CarvingEngineEvents {
@@ -108,8 +111,10 @@ export class CarvingEngine extends EventEmitter {
 
     this.status = 'scanning'
 
-    // Build the scanner with signatures matching the requested categories.
-    const signatures = this.getSignaturesForCategories(config.categories)
+    // Build the scanner with signatures matching the requested file types or categories.
+    const signatures = config.fileTypes && config.fileTypes.length > 0
+      ? this.getSignaturesForTypes(config.fileTypes)
+      : this.getSignaturesForCategories(config.categories)
     this.buildScanner(signatures)
 
     const readable = createReadableDevice(this.blockReader)
@@ -292,6 +297,13 @@ export class CarvingEngine extends EventEmitter {
     if (this.pausePromise) {
       await this.pausePromise
     }
+  }
+
+  /**
+   * Get the file signatures that match the requested file types.
+   */
+  private getSignaturesForTypes(types: FileType[]): FileSignature[] {
+    return getSignaturesByTypes(types)
   }
 
   /**

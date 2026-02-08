@@ -119,9 +119,11 @@ export class SignatureScanner {
    * @param buffer - The raw bytes to scan.
    * @param baseOffset - The absolute device offset corresponding to buffer[0].
    *   Used to compute the absolute offset of each match.
+   * @param maxMatches - Optional limit on the number of matches returned.
+   *   When reached, scanning stops early to avoid unbounded memory growth.
    * @returns Array of matches found, sorted by offset.
    */
-  scan(buffer: Buffer, baseOffset: bigint): SignatureMatch[] {
+  scan(buffer: Buffer, baseOffset: bigint, maxMatches: number = 0): SignatureMatch[] {
     if (!this.built) {
       throw new Error('Must call build() before scan()')
     }
@@ -167,6 +169,10 @@ export class SignatureScanner {
             offset: absoluteFileOffset,
             headerOffset: entry.headerOffset
           })
+
+          if (maxMatches > 0 && matches.length >= maxMatches) {
+            return matches
+          }
         }
       }
     }

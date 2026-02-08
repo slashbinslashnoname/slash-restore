@@ -35,13 +35,15 @@ export type FilesystemType = 'fat32' | 'exfat' | 'ntfs' | 'ext4' | 'hfs+' | 'apf
 
 export type ScanType = 'quick' | 'deep'
 
-export type FileCategory = 'photo' | 'video' | 'document'
+export type FileCategory = 'photo' | 'video' | 'document' | 'audio' | 'archive' | 'database'
 
 export interface ScanConfig {
   devicePath: string
   partitionPath?: string
   scanType: ScanType
   fileCategories: FileCategory[]
+  /** When provided, only these specific file types are scanned (overrides fileCategories). */
+  fileTypes?: FileType[]
   /** Known device/partition size in bytes. */
   deviceSize?: bigint
   startOffset?: bigint
@@ -74,9 +76,28 @@ export interface ScanProgress {
 // ─── File Types ───────────────────────────────────────────────
 
 export type FileType =
-  | 'jpeg' | 'png' | 'heic' | 'cr2' | 'nef' | 'arw'
-  | 'mp4' | 'mov' | 'avi'
-  | 'pdf' | 'docx' | 'xlsx'
+  | 'jpeg' | 'png' | 'heic' | 'cr2' | 'nef' | 'arw' | 'gif' | 'webp' | 'psd'
+  | 'mp4' | 'mov' | 'avi' | 'mkv' | 'flv' | 'wmv'
+  | 'pdf' | 'docx' | 'xlsx' | 'rtf' | 'pptx'
+  | 'mp3' | 'wav' | 'flac' | 'ogg' | 'm4a'
+  | 'zip' | 'rar' | '7z' | 'gz' | 'bz2' | 'xz' | 'tar'
+  | 'sqlite' | 'bdb'
+
+/** All known file types. Defined here (not in file-signatures.ts) so the
+ *  renderer can import it without pulling in Node's Buffer. */
+export const ALL_FILE_TYPES: FileType[] = [
+  'jpeg', 'png', 'heic', 'cr2', 'nef', 'arw', 'gif', 'webp', 'psd',
+  'mp4', 'mov', 'avi', 'mkv', 'flv', 'wmv',
+  'pdf', 'docx', 'xlsx', 'rtf', 'pptx',
+  'mp3', 'wav', 'flac', 'ogg', 'm4a',
+  'zip', 'rar', '7z', 'gz', 'bz2', 'xz', 'tar',
+  'sqlite', 'bdb'
+]
+
+/** All known file categories */
+export const ALL_FILE_CATEGORIES: FileCategory[] = [
+  'photo', 'video', 'document', 'audio', 'archive', 'database'
+]
 
 export interface RecoverableFile {
   id: string

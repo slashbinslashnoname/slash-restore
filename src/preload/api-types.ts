@@ -37,7 +37,9 @@ export interface SerializedScanConfig {
   devicePath: string
   partitionPath?: string
   scanType: 'quick' | 'deep'
-  fileCategories: ('photo' | 'video' | 'document')[]
+  fileCategories: ('photo' | 'video' | 'document' | 'audio' | 'archive' | 'database')[]
+  fileTypes?: string[]
+  deviceSize?: string
   startOffset?: string
   endOffset?: string
 }

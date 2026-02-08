@@ -13,7 +13,7 @@ function formatBytes(sizeStr: string): string {
   return `${value.toFixed(i === 0 ? 0 : 1)} ${units[i]}`
 }
 
-function HexViewer({ file }: { file: SerializedRecoverableFile }) {
+function HexViewer({ file, devicePath }: { file: SerializedRecoverableFile; devicePath: string }) {
   const [hexData, setHexData] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
@@ -23,9 +23,9 @@ function HexViewer({ file }: { file: SerializedRecoverableFile }) {
     setHexData(null)
 
     window.api.preview
-      .hex(file.offset, 256)
-      .then((data) => {
-        if (!cancelled) setHexData(data)
+      .hex(devicePath, file.offset, 256)
+      .then((result) => {
+        if (!cancelled) setHexData(result?.hexDump ?? null)
       })
       .catch(() => {
         if (!cancelled) setHexData(null)
@@ -37,7 +37,7 @@ function HexViewer({ file }: { file: SerializedRecoverableFile }) {
     return () => {
       cancelled = true
     }
-  }, [file.id, file.offset])
+  }, [file.id, file.offset, devicePath])
 
   if (loading) {
     return (
@@ -62,7 +62,7 @@ function HexViewer({ file }: { file: SerializedRecoverableFile }) {
   )
 }
 
-function ImagePreview({ file }: { file: SerializedRecoverableFile }) {
+function ImagePreview({ file, devicePath }: { file: SerializedRecoverableFile; devicePath: string }) {
   const [preview, setPreview] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
@@ -76,9 +76,17 @@ function ImagePreview({ file }: { file: SerializedRecoverableFile }) {
     setLoading(true)
 
     window.api.preview
-      .generate(file.id, file.offset, file.size)
-      .then((data) => {
-        if (!cancelled) setPreview(data)
+      .generate(devicePath, file.id, file.offset, file.size)
+      .then((result) => {
+        if (!cancelled && result?.base64) {
+          const mimeMap: Record<string, string> = {
+            jpeg: 'image/jpeg', jpg: 'image/jpeg', png: 'image/png',
+            gif: 'image/gif', webp: 'image/webp', heic: 'image/heic',
+            bmp: 'image/bmp', psd: 'image/vnd.adobe.photoshop',
+          }
+          const mime = mimeMap[file.extension] ?? 'application/octet-stream'
+          setPreview(`data:${mime};base64,${result.base64}`)
+        }
       })
       .catch(() => {
         if (!cancelled) setPreview(null)
@@ -90,7 +98,7 @@ function ImagePreview({ file }: { file: SerializedRecoverableFile }) {
     return () => {
       cancelled = true
     }
-  }, [file.id, file.offset, file.size, file.thumbnail])
+  }, [file.id, file.offset, file.size, file.thumbnail, devicePath])
 
   if (loading) {
     return (
@@ -123,7 +131,10 @@ export default function FilePreview() {
   const previewFileId = useAppStore((s) => s.previewFileId)
   const foundFiles = useAppStore((s) => s.foundFiles)
   const setPreviewFileId = useAppStore((s) => s.setPreviewFileId)
+  const selectedDevice = useAppStore((s) => s.selectedDevice)
+  const selectedPartition = useAppStore((s) => s.selectedPartition)
 
+  const devicePath = selectedPartition?.path ?? selectedDevice?.path ?? ''
   const file = foundFiles.find((f) => f.id === previewFileId)
 
   if (!file) {
@@ -181,12 +192,12 @@ export default function FilePreview() {
 
         {isImage && (
           <Tabs.Content value="preview" className="flex-1 overflow-auto">
-            <ImagePreview file={file} />
+            <ImagePreview file={file} devicePath={devicePath} />
           </Tabs.Content>
         )}
 
         <Tabs.Content value="hex" className="flex-1 overflow-auto">
-          <HexViewer file={file} />
+          <HexViewer file={file} devicePath={devicePath} />
         </Tabs.Content>
 
         <Tabs.Content value="info" className="flex-1 overflow-auto">

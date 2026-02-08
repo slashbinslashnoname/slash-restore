@@ -34,8 +34,15 @@ import {
   CHUNK_OVERLAP,
   SECTOR_SIZE
 } from '../../shared/constants/file-signatures'
+
+/** Safety limit: if a single chunk produces more matches than this, the
+ *  remaining matches are dropped. This prevents pathologically broad
+ *  signatures (e.g. short byte sequences common in zeroed regions) from
+ *  causing unbounded memory growth. */
+const MAX_MATCHES_PER_CHUNK = 1000
 import type {
   FileCategory,
+  FileType,
   RecoverableFile,
   ScanProgress
 } from '../../shared/types'
@@ -57,6 +64,7 @@ interface CarvingWorkerData {
   sessionId: string
   devicePath: string
   fileCategories: FileCategory[]
+  fileTypes?: FileType[]
   deviceSize: string
   startOffset: string
   endOffset: string
@@ -108,15 +116,25 @@ function waitIfPaused(): Promise<void> {
 // ─── Scanner setup ──────────────────────────────────────────────
 
 /**
- * Build the signature scanner with patterns for the requested file categories.
+ * Build the signature scanner with patterns for the requested file types
+ * (or file categories as fallback).
  */
-function buildScanner(categories: FileCategory[]): SignatureScanner {
+function buildScanner(categories: FileCategory[], fileTypes?: FileType[]): SignatureScanner {
   const scanner = new SignatureScanner()
-  const categorySet = new Set(categories)
 
-  for (const sig of FILE_SIGNATURES) {
-    if (categorySet.has(sig.category)) {
-      scanner.addPattern(sig.header, sig.type, sig.headerOffset)
+  if (fileTypes && fileTypes.length > 0) {
+    const typeSet = new Set(fileTypes)
+    for (const sig of FILE_SIGNATURES) {
+      if (typeSet.has(sig.type)) {
+        scanner.addPattern(sig.header, sig.type, sig.headerOffset)
+      }
+    }
+  } else {
+    const categorySet = new Set(categories)
+    for (const sig of FILE_SIGNATURES) {
+      if (categorySet.has(sig.category)) {
+        scanner.addPattern(sig.header, sig.type, sig.headerOffset)
+      }
     }
   }
 
@@ -127,7 +145,7 @@ function buildScanner(categories: FileCategory[]): SignatureScanner {
 // ─── Main scan loop ─────────────────────────────────────────────
 
 async function runCarving(): Promise<void> {
-  const scanner = buildScanner(config.fileCategories)
+  const scanner = buildScanner(config.fileCategories, config.fileTypes)
 
   // Open device for reading.
   const fd = await fsOpen(config.devicePath, 'r')
@@ -212,33 +230,36 @@ async function runCarving(): Promise<void> {
 
     if (bytesRead === 0) break
 
-    // Scan the buffer for file signatures.
+    // Scan the buffer for file signatures. The scanner stops early if
+    // MAX_MATCHES_PER_CHUNK is reached, preventing allocation spikes from
+    // overly broad signatures hitting zeroed/repetitive regions.
     const matches = scanner.scan(
       readBuffer.subarray(0, bytesRead),
-      currentOffset
+      currentOffset,
+      MAX_MATCHES_PER_CHUNK
     )
 
-    for (const match of matches) {
-      const sig = signatureMap.get(match.type)
-      if (!sig) continue
+    if (matches.length > 0) {
+      const batch: RecoverableFile[] = []
+      for (const match of matches) {
+        const sig = signatureMap.get(match.type)
+        if (!sig) continue
 
-      const file: RecoverableFile = {
-        id: uuidv4(),
-        type: sig.type,
-        category: sig.category,
-        offset: match.offset,
-        size: sig.maxSize, // Will be refined by the extractor later
-        sizeEstimated: true,
-        extension: sig.extension,
-        recoverability: 'good',
-        source: 'carving'
+        batch.push({
+          id: uuidv4(),
+          type: sig.type,
+          category: sig.category,
+          offset: match.offset,
+          size: sig.maxSize,
+          sizeEstimated: true,
+          extension: sig.extension,
+          recoverability: 'good',
+          source: 'carving'
+        })
       }
-
-      port.postMessage({
-        type: 'file-found',
-        sessionId,
-        data: file
-      })
+      if (batch.length > 0) {
+        port.postMessage({ type: 'files-batch', sessionId, data: batch })
+      }
     }
 
     // Advance: move forward by CHUNK_SIZE (not readLength) so the overlap

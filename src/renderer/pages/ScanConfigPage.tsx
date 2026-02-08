@@ -10,10 +10,13 @@ import {
   ChevronRight,
   Image,
   Film,
-  FileText
+  FileText,
+  Music,
+  Archive,
+  Database
 } from 'lucide-react'
 import { useAppStore } from '../store'
-import type { FileCategory, ScanType } from '../../shared/types'
+import { ALL_FILE_TYPES, type FileCategory, type FileType, type ScanType } from '../../shared/types'
 
 interface FileTypeGroup {
   category: FileCategory
@@ -31,6 +34,9 @@ const fileTypeGroups: FileTypeGroup[] = [
       { ext: 'jpeg', label: 'JPEG' },
       { ext: 'png', label: 'PNG' },
       { ext: 'heic', label: 'HEIC' },
+      { ext: 'gif', label: 'GIF' },
+      { ext: 'webp', label: 'WebP' },
+      { ext: 'psd', label: 'PSD (Photoshop)' },
       { ext: 'cr2', label: 'CR2 (Canon RAW)' },
       { ext: 'nef', label: 'NEF (Nikon RAW)' },
       { ext: 'arw', label: 'ARW (Sony RAW)' }
@@ -43,7 +49,10 @@ const fileTypeGroups: FileTypeGroup[] = [
     types: [
       { ext: 'mp4', label: 'MP4' },
       { ext: 'mov', label: 'MOV' },
-      { ext: 'avi', label: 'AVI' }
+      { ext: 'avi', label: 'AVI' },
+      { ext: 'mkv', label: 'MKV / WebM' },
+      { ext: 'flv', label: 'FLV' },
+      { ext: 'wmv', label: 'WMV' }
     ]
   },
   {
@@ -53,7 +62,44 @@ const fileTypeGroups: FileTypeGroup[] = [
     types: [
       { ext: 'pdf', label: 'PDF' },
       { ext: 'docx', label: 'DOCX' },
-      { ext: 'xlsx', label: 'XLSX' }
+      { ext: 'xlsx', label: 'XLSX' },
+      { ext: 'pptx', label: 'PPTX' },
+      { ext: 'rtf', label: 'RTF' }
+    ]
+  },
+  {
+    category: 'audio',
+    label: 'Audio',
+    icon: Music,
+    types: [
+      { ext: 'mp3', label: 'MP3' },
+      { ext: 'wav', label: 'WAV' },
+      { ext: 'flac', label: 'FLAC' },
+      { ext: 'ogg', label: 'OGG' },
+      { ext: 'm4a', label: 'M4A' }
+    ]
+  },
+  {
+    category: 'archive',
+    label: 'Archives',
+    icon: Archive,
+    types: [
+      { ext: 'zip', label: 'ZIP' },
+      { ext: 'rar', label: 'RAR' },
+      { ext: '7z', label: '7-Zip' },
+      { ext: 'gz', label: 'Gzip' },
+      { ext: 'bz2', label: 'Bzip2' },
+      { ext: 'xz', label: 'XZ' },
+      { ext: 'tar', label: 'TAR' }
+    ]
+  },
+  {
+    category: 'database',
+    label: 'Database',
+    icon: Database,
+    types: [
+      { ext: 'sqlite', label: 'SQLite' },
+      { ext: 'bdb', label: 'BDB (wallet.dat)' }
     ]
   }
 ]
@@ -62,10 +108,11 @@ export default function ScanConfigPage() {
   const navigate = useNavigate()
   const selectedDevice = useAppStore((s) => s.selectedDevice)
   const scanType = useAppStore((s) => s.scanType)
-  const fileCategories = useAppStore((s) => s.fileCategories)
+  const selectedFileTypes = useAppStore((s) => s.selectedFileTypes)
   const selectedPartition = useAppStore((s) => s.selectedPartition)
   const setScanType = useAppStore((s) => s.setScanType)
   const toggleFileCategory = useAppStore((s) => s.toggleFileCategory)
+  const toggleFileType = useAppStore((s) => s.toggleFileType)
   const setSelectedPartition = useAppStore((s) => s.setSelectedPartition)
   const setCurrentStep = useAppStore((s) => s.setCurrentStep)
 
@@ -185,45 +232,65 @@ export default function ScanConfigPage() {
           </Tabs.List>
 
           {fileTypeGroups.map((group) => {
-            const isActive = fileCategories.includes(group.category)
+            const selectedInCategory = group.types.filter((ft) =>
+              selectedFileTypes.includes(ft.ext as FileType)
+            )
+            const allSelected = selectedInCategory.length === group.types.length
+            const someSelected = selectedInCategory.length > 0 && !allSelected
             return (
               <Tabs.Content key={group.category} value={group.category}>
                 <div className="rounded-lg border border-surface-lighter bg-surface-light p-4">
-                  {/* Category toggle */}
+                  {/* Category toggle (select/deselect all) */}
                   <label className="mb-3 flex items-center gap-3">
                     <Checkbox.Root
-                      checked={isActive}
+                      checked={allSelected ? true : someSelected ? 'indeterminate' : false}
                       onCheckedChange={() =>
                         toggleFileCategory(group.category)
                       }
-                      className="flex h-5 w-5 items-center justify-center rounded border border-gray-500 bg-surface transition-colors data-[state=checked]:border-primary-500 data-[state=checked]:bg-primary-500"
+                      className="flex h-5 w-5 items-center justify-center rounded border border-gray-500 bg-surface transition-colors data-[state=checked]:border-primary-500 data-[state=checked]:bg-primary-500 data-[state=indeterminate]:border-primary-500 data-[state=indeterminate]:bg-primary-500"
                     >
                       <Checkbox.Indicator>
-                        <Check className="h-3.5 w-3.5 text-white" />
+                        {someSelected ? (
+                          <div className="h-2 w-2 rounded-sm bg-white" />
+                        ) : (
+                          <Check className="h-3.5 w-3.5 text-white" />
+                        )}
                       </Checkbox.Indicator>
                     </Checkbox.Root>
                     <span className="text-sm font-medium text-white">
-                      Include all {group.label.toLowerCase()}
+                      All {group.label.toLowerCase()}
                     </span>
                   </label>
 
-                  {/* Individual types */}
+                  {/* Individual type checkboxes */}
                   <div className="ml-8 grid grid-cols-2 gap-2">
-                    {group.types.map((ft) => (
-                      <div
-                        key={ft.ext}
-                        className={`flex items-center gap-2 rounded px-2 py-1.5 text-xs ${
-                          isActive
-                            ? 'text-gray-300'
-                            : 'text-gray-600'
-                        }`}
-                      >
-                        <span className="font-mono uppercase text-gray-500">
-                          .{ft.ext}
-                        </span>
-                        <span>{ft.label}</span>
-                      </div>
-                    ))}
+                    {group.types.map((ft) => {
+                      const isChecked = selectedFileTypes.includes(ft.ext as FileType)
+                      return (
+                        <label
+                          key={ft.ext}
+                          className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-surface-lighter"
+                        >
+                          <Checkbox.Root
+                            checked={isChecked}
+                            onCheckedChange={() =>
+                              toggleFileType(ft.ext as FileType)
+                            }
+                            className="flex h-4 w-4 items-center justify-center rounded border border-gray-500 bg-surface transition-colors data-[state=checked]:border-primary-500 data-[state=checked]:bg-primary-500"
+                          >
+                            <Checkbox.Indicator>
+                              <Check className="h-3 w-3 text-white" />
+                            </Checkbox.Indicator>
+                          </Checkbox.Root>
+                          <span className="font-mono uppercase text-gray-500">
+                            .{ft.ext}
+                          </span>
+                          <span className={isChecked ? 'text-gray-300' : 'text-gray-600'}>
+                            {ft.label}
+                          </span>
+                        </label>
+                      )
+                    })}
                   </div>
                 </div>
               </Tabs.Content>
@@ -259,11 +326,13 @@ export default function ScanConfigPage() {
             </span>
           </div>
           <div className="flex justify-between">
-            <span className="text-gray-400">File Categories</span>
+            <span className="text-gray-400">File Types</span>
             <span className="text-gray-200">
-              {fileCategories.length === 0
+              {selectedFileTypes.length === 0
                 ? 'None selected'
-                : fileCategories.join(', ')}
+                : selectedFileTypes.length === ALL_FILE_TYPES.length
+                  ? 'All types'
+                  : `${selectedFileTypes.length} types selected`}
             </span>
           </div>
         </div>
@@ -280,7 +349,7 @@ export default function ScanConfigPage() {
         </button>
         <button
           onClick={handleStart}
-          disabled={fileCategories.length === 0}
+          disabled={selectedFileTypes.length === 0}
           className="flex items-center gap-2 rounded-lg bg-primary-600 px-6 py-2.5 text-sm font-medium text-white transition-colors hover:bg-primary-500 disabled:cursor-not-allowed disabled:opacity-40"
         >
           Start Scan

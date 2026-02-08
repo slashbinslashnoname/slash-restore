@@ -13,6 +13,7 @@ export function useScan() {
   const selectedDevice = useAppStore((s) => s.selectedDevice)
   const scanType = useAppStore((s) => s.scanType)
   const fileCategories = useAppStore((s) => s.fileCategories)
+  const selectedFileTypes = useAppStore((s) => s.selectedFileTypes)
   const selectedPartition = useAppStore((s) => s.selectedPartition)
   const scanSessionId = useAppStore((s) => s.scanSessionId)
 
@@ -84,6 +85,7 @@ export function useScan() {
       partitionPath: selectedPartition?.path,
       scanType,
       fileCategories,
+      fileTypes: selectedFileTypes,
       deviceSize: selectedPartition?.size ?? selectedDevice.size
     }
 
@@ -104,6 +106,7 @@ export function useScan() {
     selectedPartition,
     scanType,
     fileCategories,
+    selectedFileTypes,
     setScanStatus,
     setScanStartedAt,
     setScanError,

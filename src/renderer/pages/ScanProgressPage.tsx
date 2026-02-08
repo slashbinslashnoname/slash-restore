@@ -232,12 +232,22 @@ export default function ScanProgressPage() {
         )}
 
         {(status === 'cancelled' || status === 'error') && (
-          <button
-            onClick={() => navigate('/')}
-            className="rounded-lg bg-surface-light px-5 py-2.5 text-sm text-gray-300 transition-colors hover:bg-surface-lighter"
-          >
-            Back to Devices
-          </button>
+          <>
+            <button
+              onClick={() => navigate('/')}
+              className="rounded-lg bg-surface-light px-5 py-2.5 text-sm text-gray-300 transition-colors hover:bg-surface-lighter"
+            >
+              Back to Devices
+            </button>
+            {foundFiles.length > 0 && (
+              <button
+                onClick={() => navigate('/files')}
+                className="rounded-lg bg-primary-600 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-primary-500"
+              >
+                View {foundFiles.length} found file{foundFiles.length !== 1 ? 's' : ''}
+              </button>
+            )}
+          </>
         )}
       </div>
     </div>

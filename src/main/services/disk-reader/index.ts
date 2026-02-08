@@ -8,8 +8,11 @@
 
 import * as fs from 'fs'
 import { promisify } from 'util'
+import { execFile } from 'child_process'
 import type { BlockReader } from '../../../core/io/block-reader'
 import { PrivilegeManager } from '../privilege'
+
+const execFileAsync = promisify(execFile)
 
 const fsOpen = promisify(fs.open)
 const fsRead = promisify(fs.read)
@@ -44,14 +47,20 @@ class FileBlockReader implements BlockReader {
     const fd = await fsOpen(devicePath, 'r')
 
     let size: bigint
-    try {
       const stat = await fsFstat(fd)
       // For regular files, stat.size is accurate.
       // For block devices on Linux, stat.size is 0 - we need an alternative approach.
       if (stat.size > 0) {
         size = BigInt(stat.size)
       } else {
-        // Attempt to seek to the end to determine device size.
+        try {
+          const { stdout } = await execFileAsync('blockdev', ['--getsize64', devicePath])
+          size = BigInt(stdout.trim())
+        } catch (e: unknown) {
+          console.warn(`blockdev failed: ${e}, falling back to stat.size=0`)
+          size = 0n
+        }
+      }
         size = await FileBlockReader.probeDeviceSize(fd)
       }
     } catch {

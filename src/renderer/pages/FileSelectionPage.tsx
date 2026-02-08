@@ -10,7 +10,10 @@ import {
   Square,
   Image,
   Film,
-  FileText
+  FileText,
+  Music,
+  Archive,
+  Database
 } from 'lucide-react'
 import { useAppStore } from '../store'
 import type { SerializedRecoverableFile } from '../store'
@@ -32,7 +35,10 @@ type ViewMode = 'table' | 'grid'
 const categoryIcons: Record<FileCategory, typeof Image> = {
   photo: Image,
   video: Film,
-  document: FileText
+  document: FileText,
+  audio: Music,
+  archive: Archive,
+  database: Database
 }
 
 export default function FileSelectionPage() {
@@ -155,7 +161,7 @@ export default function FileSelectionPage() {
               active={categoryFilter === 'all'}
               onClick={() => setCategoryFilter('all')}
             />
-            {(['photo', 'video', 'document'] as FileCategory[]).map(
+            {(['photo', 'video', 'document', 'audio', 'archive', 'database'] as FileCategory[]).map(
               (cat) => {
                 const Icon = categoryIcons[cat]
                 const count = foundFiles.filter(
@@ -337,15 +343,10 @@ function GridView({
                 />
               ) : (
                 <div className="flex h-full w-full items-center justify-center text-gray-600">
-                  {file.category === 'photo' && (
-                    <Image className="h-8 w-8" />
-                  )}
-                  {file.category === 'video' && (
-                    <Film className="h-8 w-8" />
-                  )}
-                  {file.category === 'document' && (
-                    <FileText className="h-8 w-8" />
-                  )}
+                  {(() => {
+                    const Icon = categoryIcons[file.category] ?? FileText
+                    return <Icon className="h-8 w-8" />
+                  })()}
                 </div>
               )}
             </div>

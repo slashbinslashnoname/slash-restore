@@ -40,6 +40,7 @@ function deserializeScanConfig(raw: Record<string, unknown>): ScanConfig {
     partitionPath: raw.partitionPath as string | undefined,
     scanType: raw.scanType as ScanConfig['scanType'],
     fileCategories: raw.fileCategories as ScanConfig['fileCategories'],
+    fileTypes: raw.fileTypes as ScanConfig['fileTypes'],
     deviceSize: raw.deviceSize != null ? BigInt(raw.deviceSize as string) : undefined,
     startOffset: raw.startOffset != null ? BigInt(raw.startOffset as string) : undefined,
     endOffset: raw.endOffset != null ? BigInt(raw.endOffset as string) : undefined,

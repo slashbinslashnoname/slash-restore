@@ -1,12 +1,14 @@
 import { create } from 'zustand'
-import type {
-  FileCategory,
-  FileType,
-  PrivilegeStatus,
-  RecoveryError,
-  RecoveryStatus,
-  ScanStatus,
-  ScanType
+import {
+  ALL_FILE_CATEGORIES,
+  ALL_FILE_TYPES,
+  type FileCategory,
+  type FileType,
+  type PrivilegeStatus,
+  type RecoveryError,
+  type RecoveryStatus,
+  type ScanStatus,
+  type ScanType
 } from '../../shared/types'
 
 // ─── Renderer-side types (bigint fields as strings) ─────────
@@ -91,6 +93,7 @@ interface DeviceSlice {
 interface ScanSlice {
   scanType: ScanType
   fileCategories: FileCategory[]
+  selectedFileTypes: FileType[]
   selectedPartition: SerializedPartitionInfo | null
   scanStatus: ScanStatus
   scanProgress: SerializedScanProgress | null
@@ -135,6 +138,8 @@ export interface AppState
   setScanType: (type: ScanType) => void
   setFileCategories: (categories: FileCategory[]) => void
   toggleFileCategory: (category: FileCategory) => void
+  toggleFileType: (fileType: FileType) => void
+  setSelectedFileTypes: (types: FileType[]) => void
   setSelectedPartition: (partition: SerializedPartitionInfo | null) => void
 
   // Scan lifecycle actions
@@ -169,9 +174,20 @@ export interface AppState
   setPreviewFileId: (id: string | null) => void
 }
 
+/** Map from category to the file types it contains */
+const FILE_TYPES_BY_CATEGORY: Record<FileCategory, FileType[]> = {
+  photo: ['jpeg', 'png', 'heic', 'cr2', 'nef', 'arw', 'gif', 'webp', 'psd'],
+  video: ['mp4', 'mov', 'avi', 'mkv', 'flv', 'wmv'],
+  document: ['pdf', 'docx', 'xlsx', 'rtf', 'pptx'],
+  audio: ['mp3', 'wav', 'flac', 'ogg', 'm4a'],
+  archive: ['zip', 'rar', '7z', 'gz', 'bz2', 'xz', 'tar'],
+  database: ['sqlite', 'bdb']
+}
+
 const initialScanState: ScanSlice = {
   scanType: 'quick',
-  fileCategories: ['photo', 'video', 'document'],
+  fileCategories: ['photo', 'video', 'document', 'audio', 'archive', 'database'],
+  selectedFileTypes: [...ALL_FILE_TYPES],
   selectedPartition: null,
   scanStatus: 'idle',
   scanProgress: null,
@@ -213,16 +229,51 @@ export const useAppStore = create<AppState>((set, get) => ({
   selectDevice: (device) => set({ selectedDevice: device }),
 
   // ─── Scan config actions ─────────────────────────────────
-  setScanType: (scanType) => set({ scanType }),
-  setFileCategories: (fileCategories) => set({ fileCategories }),
-  toggleFileCategory: (category) => {
-    const current = get().fileCategories
-    if (current.includes(category)) {
-      set({ fileCategories: current.filter((c) => c !== category) })
+  setScanType: (scanType) => {
+    if (scanType === 'deep') {
+      set({ scanType, selectedFileTypes: [], fileCategories: [] })
     } else {
-      set({ fileCategories: [...current, category] })
+      set({ scanType, selectedFileTypes: [...ALL_FILE_TYPES], fileCategories: [...ALL_FILE_CATEGORIES] })
     }
   },
+  setFileCategories: (fileCategories) => set({ fileCategories }),
+  toggleFileCategory: (category) => {
+    const typesInCategory = FILE_TYPES_BY_CATEGORY[category]
+    const current = get().selectedFileTypes
+    const allSelected = typesInCategory.every((t) => current.includes(t))
+    let next: FileType[]
+    if (allSelected) {
+      // Deselect all types in this category
+      next = current.filter((t) => !typesInCategory.includes(t))
+    } else {
+      // Select all types in this category
+      const currentSet = new Set(current)
+      for (const t of typesInCategory) currentSet.add(t)
+      next = [...currentSet]
+    }
+    // Derive fileCategories from the new selectedFileTypes
+    const categories: FileCategory[] = []
+    for (const [cat, types] of Object.entries(FILE_TYPES_BY_CATEGORY) as [FileCategory, FileType[]][]) {
+      if (types.some((t) => next.includes(t))) categories.push(cat)
+    }
+    set({ selectedFileTypes: next, fileCategories: categories })
+  },
+  toggleFileType: (fileType) => {
+    const current = get().selectedFileTypes
+    let next: FileType[]
+    if (current.includes(fileType)) {
+      next = current.filter((t) => t !== fileType)
+    } else {
+      next = [...current, fileType]
+    }
+    // Derive fileCategories from the new selectedFileTypes
+    const categories: FileCategory[] = []
+    for (const [cat, types] of Object.entries(FILE_TYPES_BY_CATEGORY) as [FileCategory, FileType[]][]) {
+      if (types.some((t) => next.includes(t))) categories.push(cat)
+    }
+    set({ selectedFileTypes: next, fileCategories: categories })
+  },
+  setSelectedFileTypes: (selectedFileTypes) => set({ selectedFileTypes }),
   setSelectedPartition: (partition) => set({ selectedPartition: partition }),
 
   // ─── Scan lifecycle actions ──────────────────────────────
