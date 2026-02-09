@@ -45,6 +45,15 @@ export default function RecoveryPage() {
     setCurrentStep(5)
   }, [setCurrentStep])
 
+  // Set a default destination path if none is selected
+  useEffect(() => {
+    if (!destinationPath) {
+      window.api.dialog.getDefaultRecoveryPath().then((defaultPath) => {
+        if (defaultPath) setDestinationPath(defaultPath)
+      }).catch(() => { /* ignore */ })
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Determine if destination is on same device
   const isSameDevice = useMemo(() => {
     if (!selectedDevice || !destinationPath) return false

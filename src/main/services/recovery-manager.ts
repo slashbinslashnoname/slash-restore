@@ -51,6 +51,7 @@ export class RecoveryManager extends EventEmitter {
   private cancelled = false
   private pausePromise: Promise<void> | null = null
   private pauseResolve: (() => void) | null = null
+  private currentRecoveryId: string | null = null
 
   constructor(diskReader: DiskReaderService) {
     super()
@@ -64,22 +65,9 @@ export class RecoveryManager extends EventEmitter {
    * @returns The recovery session ID.
    * @throws If source and destination are on the same physical device.
    */
-  async start(config: RecoveryConfig): Promise<string> {
+  async startRecovery(config: RecoveryConfig): Promise<string> {
     const sessionId = uuidv4()
-
-    // Safety check: ensure source and destination are not on the same device.
-    const sameDevice = await this.isSameDevice(
-      config.sourceDevicePath,
-      config.destinationPath
-    )
-    if (sameDevice) {
-      const msg =
-        'SAFETY: Source device and destination are on the same physical device. ' +
-        'Writing recovered files to the same device could overwrite the data ' +
-        'you are trying to recover. Please choose a different destination.'
-      this.emit('error', msg)
-      throw new Error(msg)
-    }
+    this.currentRecoveryId = sessionId
 
     // Ensure destination directory exists.
     await fsMkdir(config.destinationPath, { recursive: true })
@@ -89,10 +77,11 @@ export class RecoveryManager extends EventEmitter {
     this.cancelled = false
 
     // Run recovery in the background.
-    this.recoverFiles(config).catch((err) => {
+    this.recoverFiles(config, sessionId).catch((err) => {
       this.status = 'error'
       this.emit(
         'error',
+        sessionId,
         err instanceof Error ? err.message : 'Unknown recovery error'
       )
     })
@@ -103,7 +92,7 @@ export class RecoveryManager extends EventEmitter {
   /**
    * Pause the current recovery operation.
    */
-  pause(): void {
+  pauseRecovery(_recoveryId: string): void {
     if (this.status !== 'recovering') return
     this.paused = true
     this.status = 'paused'
@@ -115,7 +104,7 @@ export class RecoveryManager extends EventEmitter {
   /**
    * Resume a paused recovery operation.
    */
-  resume(): void {
+  resumeRecovery(_recoveryId: string): void {
     if (this.status !== 'paused') return
     this.paused = false
     this.status = 'recovering'
@@ -129,7 +118,7 @@ export class RecoveryManager extends EventEmitter {
   /**
    * Cancel the current recovery operation.
    */
-  cancel(): void {
+  cancelRecovery(_recoveryId: string): void {
     this.cancelled = true
     this.status = 'cancelled'
     // If paused, unblock the wait loop so the recovery loop can exit.
@@ -152,7 +141,7 @@ export class RecoveryManager extends EventEmitter {
   /**
    * Core recovery loop: iterate over files, read from source, write to dest.
    */
-  private async recoverFiles(config: RecoveryConfig): Promise<void> {
+  private async recoverFiles(config: RecoveryConfig, recoveryId: string): Promise<void> {
     const { files, destinationPath, conflictStrategy, sourceDevicePath } = config
     const errors: RecoveryError[] = []
     let completedFiles = 0
@@ -166,7 +155,7 @@ export class RecoveryManager extends EventEmitter {
     } catch (err) {
       this.status = 'error'
       const msg = `Failed to open source device: ${err instanceof Error ? err.message : String(err)}`
-      this.emit('error', msg)
+      this.emit('error', recoveryId, msg)
       return
     }
 
@@ -211,7 +200,7 @@ export class RecoveryManager extends EventEmitter {
         errors
       }
 
-      this.emit('progress', progress)
+      this.emit('progress', recoveryId, progress)
     }
 
     if (this.cancelled) {
@@ -232,7 +221,7 @@ export class RecoveryManager extends EventEmitter {
       errors
     }
 
-    this.emit('complete', finalProgress)
+    this.emit('complete', recoveryId, finalProgress)
   }
 
   /**
@@ -422,16 +411,22 @@ export class RecoveryManager extends EventEmitter {
       // The second line is the device.
       const destDevice = lines[1]?.trim() ?? ''
 
-      // Check if the destination device is the source device or a partition of it.
-      // e.g., source = /dev/sda, destDevice = /dev/sda1
+      // Block if dest is on the exact same device/partition being scanned.
+      // e.g., source = /dev/sda1, destDevice = /dev/sda1
       if (destDevice === sourceDevicePath) return true
+
+      // Block if scanning a whole disk and dest is on one of its partitions.
+      // e.g., source = /dev/sda, destDevice = /dev/sda1
       if (destDevice.startsWith(sourceDevicePath)) return true
-      if (sourceDevicePath.startsWith(destDevice.replace(/[0-9]+$/, ''))) return true
     } catch {
-      // Fallback to stat-based comparison.
-      const sourceStat = await fsStat(sourceDevicePath)
-      const destStat = await fsStat(realDest)
-      return sourceStat.dev === destStat.dev
+      // Fallback to stat-based comparison — only matches same partition.
+      try {
+        const sourceStat = await fsStat(sourceDevicePath)
+        const destStat = await fsStat(realDest)
+        return sourceStat.dev === destStat.dev
+      } catch {
+        return false
+      }
     }
 
     return false
@@ -454,11 +449,11 @@ export class RecoveryManager extends EventEmitter {
 
     const destDevice = lines[1].split(/\s+/)[0] ?? ''
 
-    // /dev/disk2s1 -> /dev/disk2
-    const destBase = destDevice.replace(/s\d+$/, '')
-    const sourceBase = sourceDevicePath.replace(/s\d+$/, '')
+    // Block if same device/partition, or if scanning whole disk and dest is on a partition of it
+    if (destDevice === sourceDevicePath) return true
+    if (destDevice.startsWith(sourceDevicePath)) return true
 
-    return destBase === sourceBase
+    return false
   }
 
   /**

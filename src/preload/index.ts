@@ -137,6 +137,10 @@ const api: ElectronAPI = {
       const result = await ipcRenderer.invoke(IpcChannels.DIALOG_SELECT_DIRECTORY)
       return result?.path ?? null
     },
+    async getDefaultRecoveryPath() {
+      const result = await ipcRenderer.invoke(IpcChannels.DIALOG_DEFAULT_RECOVERY_PATH)
+      return result?.path ?? null
+    },
   },
 }
 

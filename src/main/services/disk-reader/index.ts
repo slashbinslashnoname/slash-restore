@@ -47,6 +47,7 @@ class FileBlockReader implements BlockReader {
     const fd = await fsOpen(devicePath, 'r')
 
     let size: bigint
+    try {
       const stat = await fsFstat(fd)
       // For regular files, stat.size is accurate.
       // For block devices on Linux, stat.size is 0 - we need an alternative approach.
@@ -56,12 +57,9 @@ class FileBlockReader implements BlockReader {
         try {
           const { stdout } = await execFileAsync('blockdev', ['--getsize64', devicePath])
           size = BigInt(stdout.trim())
-        } catch (e: unknown) {
-          console.warn(`blockdev failed: ${e}, falling back to stat.size=0`)
-          size = 0n
+        } catch {
+          size = await FileBlockReader.probeDeviceSize(fd)
         }
-      }
-        size = await FileBlockReader.probeDeviceSize(fd)
       }
     } catch {
       // Fallback: if we cannot determine size, set to max safe value.
@@ -192,8 +190,10 @@ export class DiskReaderService {
     if (existing) return existing
 
     // Ensure we have adequate privileges before attempting to open the device.
-    const hasPrivilege = await this.privilegeManager.checkPrivilege()
-    if (!hasPrivilege) {
+    // Use grantDeviceAccess (not checkPrivilege) so that ACL-based access
+    // granted during scan is detected and, if needed, re-requested.
+    const granted = await this.privilegeManager.grantDeviceAccess(devicePath)
+    if (!granted) {
       throw new Error(
         `Insufficient privileges to open device ${devicePath}. ` +
         'Request elevation before opening devices.'

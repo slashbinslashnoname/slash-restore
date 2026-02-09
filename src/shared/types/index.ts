@@ -202,7 +202,8 @@ export const IpcChannels = {
   PREVIEW_HEX: 'preview:hex',
 
   // Dialog
-  DIALOG_SELECT_DIRECTORY: 'dialog:select-directory'
+  DIALOG_SELECT_DIRECTORY: 'dialog:select-directory',
+  DIALOG_DEFAULT_RECOVERY_PATH: 'dialog:default-recovery-path'
 } as const
 
 // ─── IPC Payload Types ────────────────────────────────────────

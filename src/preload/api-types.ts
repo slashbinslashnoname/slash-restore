@@ -154,6 +154,7 @@ export interface ElectronAPI {
 
   dialog: {
     selectDirectory(): Promise<IpcResult & { path?: string | null }>
+    getDefaultRecoveryPath(): Promise<string | null>
   }
 }
 

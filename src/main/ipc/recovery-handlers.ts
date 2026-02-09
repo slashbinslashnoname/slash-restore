@@ -143,18 +143,6 @@ export function registerRecoveryHandlers(
           return { success: false, error: 'No destination path specified.' }
         }
 
-        // Same-device protection: prevent writing recovered data to the
-        // source device, which would overwrite the very data we are
-        // trying to recover.
-        if (isSameDevice(config.sourceDevicePath, config.destinationPath)) {
-          return {
-            success: false,
-            error:
-              'The destination is on the same device as the source. ' +
-              'Please choose a different drive to avoid overwriting recoverable data.',
-          }
-        }
-
         const recoveryId = await recoveryManager.startRecovery(config)
         return { success: true, recoveryId }
       } catch (error) {

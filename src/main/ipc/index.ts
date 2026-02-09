@@ -1,5 +1,6 @@
 import type { IpcMain } from 'electron'
-import { dialog, BrowserWindow } from 'electron'
+import { app, dialog, BrowserWindow } from 'electron'
+import { join } from 'path'
 import { IpcChannels } from '../../shared/types'
 import { registerDeviceHandlers } from './device-handlers'
 import { registerScanHandlers, type ScanManager } from './scan-handlers'
@@ -42,6 +43,12 @@ export function registerAllHandlers(ipcMain: IpcMain, services: IpcServices): vo
     }
 
     return { success: true, path: result.filePaths[0] }
+  })
+
+  // Default recovery path — ~/Documents/SlashRestore Recovery
+  ipcMain.handle(IpcChannels.DIALOG_DEFAULT_RECOVERY_PATH, () => {
+    const documentsDir = app.getPath('documents')
+    return { success: true, path: join(documentsDir, 'SlashRestore Recovery') }
   })
 }
 

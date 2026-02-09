@@ -5,6 +5,7 @@ import { is } from '@electron-toolkit/utils'
 import { registerAllHandlers } from './ipc'
 import { ScanManager } from './services/scan-manager'
 import { RecoveryManager } from './services/recovery-manager'
+import { DiskReaderService } from './services/disk-reader'
 import { PrivilegeManager } from './services/privilege/index'
 
 // ─── State ──────────────────────────────────────────────────
@@ -71,10 +72,11 @@ function createWindow(): void {
 // ─── Service Initialization ─────────────────────────────────
 
 function initializeServices(): void {
-  scanManager = new ScanManager()
-  recoveryManager = new RecoveryManager()
   privilegeManager = new PrivilegeManager()
+  scanManager = new ScanManager()
   scanManager.setPrivilegeManager(privilegeManager)
+  const diskReader = new DiskReaderService(privilegeManager)
+  recoveryManager = new RecoveryManager(diskReader)
 
   registerAllHandlers(ipcMain, { scanManager, recoveryManager, privilegeManager })
 }

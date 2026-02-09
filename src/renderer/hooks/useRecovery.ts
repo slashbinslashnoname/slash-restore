@@ -23,22 +23,19 @@ export function useRecovery() {
   // Set up IPC event listeners
   useEffect(() => {
     const unsubProgress = window.api.recovery.onProgress(
-      (progress: unknown) => {
+      (_recoveryId: string, progress: unknown) => {
         updateRecoveryProgress(progress as SerializedRecoveryProgress)
       }
     )
 
-    const unsubComplete = window.api.recovery.onComplete(() => {
+    const unsubComplete = window.api.recovery.onComplete((_recoveryId: string) => {
       setRecoveryStatus('completed')
     })
 
-    const unsubError = window.api.recovery.onError((error: unknown) => {
-      const err = error as RecoveryError | { message?: string }
-      if ('fileId' in err) {
-        addRecoveryError(err as RecoveryError)
-      } else {
-        setRecoveryStatus('error')
-      }
+    const unsubError = window.api.recovery.onError((_recoveryId: string, error: unknown) => {
+      const errStr = typeof error === 'string' ? error : String(error)
+      addRecoveryError({ fileId: '', fileName: '', error: errStr })
+      setRecoveryStatus('error')
     })
 
     cleanupRef.current = [unsubProgress, unsubComplete, unsubError]
